@@ -1,0 +1,59 @@
+# FFA Estimator — full stack
+#   cp .env.example .env    (set POSTGRES_PASSWORD at minimum)
+#   docker compose up -d --build
+# Frontend: http://<host>:5152    Backend API: http://<host>:8880/api/health
+name: ffa-estimator
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-ffa_estimator}
+      POSTGRES_USER: ${POSTGRES_USER:-ffa}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    # Not published to the host: only the backend can reach the database.
+
+  backend:
+    image: ${REGISTRY:+${REGISTRY}/}ffa-estimator-backend:${IMAGE_TAG:-latest}
+    build:
+      context: ./backend
+      target: runtime
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      # Point this at your own PostgreSQL server to use an external database instead of the `db` service.
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://${POSTGRES_USER:-ffa}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-ffa_estimator}}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      LLM_MODEL: ${LLM_MODEL:-claude-opus-5-5}
+      LLM_EFFORT: ${LLM_EFFORT:-medium}
+      SEED_DEMO: ${SEED_DEMO:-true}
+      WEB_CONCURRENCY: ${WEB_CONCURRENCY:-2}
+      CORS_ORIGINS: '["http://localhost:5152"]'
+    ports:
+      - "${BACKEND_PORT:-8880}:8880"
+
+  frontend:
+    image: ${REGISTRY:+${REGISTRY}/}ffa-estimator-frontend:${IMAGE_TAG:-latest}
+    build:
+      context: ./web
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      BACKEND_URL: http://backend:8880
+    ports:
+      - "${FRONTEND_PORT:-5152}:5152"
+
+volumes:
+  pgdata:

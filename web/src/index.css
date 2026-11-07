@@ -1,0 +1,49 @@
+@import "./theme.css";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html { -webkit-font-smoothing: antialiased; color-scheme: light; }
+  html.dark { color-scheme: dark; }
+  body {
+    @apply bg-canvas text-ink font-sans text-[14px] transition-colors duration-200;
+    /* soft brand wash at the top of the workspace */
+    background-image: radial-gradient(1200px 380px at 70% -120px, rgba(31, 95, 224, 0.08), transparent 70%);
+    background-repeat: no-repeat;
+  }
+  html.dark body {
+    background-image: radial-gradient(1200px 420px at 70% -140px, rgba(31, 95, 224, 0.18), transparent 70%);
+  }
+  h1, h2, h3 { letter-spacing: -0.012em; }
+  :focus-visible { @apply outline-none ring-2 ring-brand-400 ring-offset-2 ring-offset-surface; }
+  ::selection { background: rgb(var(--c-brand-200)); }
+}
+
+@layer components {
+  .num { font-variant-numeric: tabular-nums; }
+  .card { @apply bg-surface border border-line rounded-xl shadow-card; }
+  html.dark .card { box-shadow: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 8px 24px -12px rgba(0, 0, 0, 0.5); }
+  .card-hover { @apply transition hover:shadow-lift hover:-translate-y-px; }
+  .label { @apply text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-3; }
+  .input {
+    @apply w-full rounded-lg border border-line bg-surface px-3 py-2 text-[14px] text-ink shadow-[0_1px_2px_rgba(16,24,40,0.04)]
+           placeholder:text-ink-4 focus:border-brand-400 focus:ring-4 focus:ring-brand-100 focus:outline-none transition;
+  }
+  /* citation highlights use the logo gold, distinct from status amber */
+  .hl {
+    @apply rounded-[3px] decoration-2 underline underline-offset-[3px] cursor-pointer transition-colors;
+    background: rgba(252, 187, 11, 0.16);
+    text-decoration-color: rgba(252, 187, 11, 0.85);
+  }
+  .hl:hover { background: rgba(252, 187, 11, 0.26); }
+  .hl-active { background: rgba(252, 187, 11, 0.42) !important; text-decoration-color: #b88400; }
+  .th { @apply text-[11px] font-semibold uppercase tracking-[0.06em] text-ink-3; }
+}
+
+@media print {
+  body { background: white; }
+  .no-print { display: none !important; }
+  .print-sheet { box-shadow: none !important; border: none !important; margin: 0 !important; max-width: none !important; }
+  @page { size: A4; margin: 14mm; }
+}

@@ -1,0 +1,102 @@
+{
+  "canvas": "rgb(var(--c-canvas) / <alpha-value>)",
+  "surface": "rgb(var(--c-surface) / <alpha-value>)",
+  "line": {
+    "DEFAULT": "rgb(var(--c-line) / <alpha-value>)",
+    "soft": "rgb(var(--c-line-soft) / <alpha-value>)"
+  },
+  "ink": {
+    "DEFAULT": "rgb(var(--c-ink) / <alpha-value>)",
+    "2": "rgb(var(--c-ink-2) / <alpha-value>)",
+    "3": "rgb(var(--c-ink-3) / <alpha-value>)",
+    "4": "rgb(var(--c-ink-4) / <alpha-value>)"
+  },
+  "slate": {
+    "50": "rgb(var(--c-slate-50) / <alpha-value>)",
+    "100": "rgb(var(--c-slate-100) / <alpha-value>)",
+    "200": "rgb(var(--c-slate-200) / <alpha-value>)",
+    "300": "rgb(var(--c-slate-300) / <alpha-value>)",
+    "400": "rgb(var(--c-slate-400) / <alpha-value>)"
+  },
+  "brand": {
+    "50": "rgb(var(--c-brand-50) / <alpha-value>)",
+    "100": "rgb(var(--c-brand-100) / <alpha-value>)",
+    "200": "rgb(var(--c-brand-200) / <alpha-value>)",
+    "300": "rgb(var(--c-brand-300) / <alpha-value>)",
+    "400": "rgb(var(--c-brand-400) / <alpha-value>)",
+    "500": "rgb(var(--c-brand-500) / <alpha-value>)",
+    "600": "rgb(var(--c-brand-600) / <alpha-value>)",
+    "700": "rgb(var(--c-brand-700) / <alpha-value>)",
+    "800": "rgb(var(--c-brand-800) / <alpha-value>)",
+    "900": "rgb(var(--c-brand-900) / <alpha-value>)",
+    "950": "rgb(var(--c-brand-950) / <alpha-value>)"
+  },
+  "emerald": {
+    "50": "rgb(var(--c-emerald-50) / <alpha-value>)",
+    "100": "rgb(var(--c-emerald-100) / <alpha-value>)",
+    "200": "rgb(var(--c-emerald-200) / <alpha-value>)",
+    "300": "rgb(var(--c-emerald-300) / <alpha-value>)",
+    "400": "rgb(var(--c-emerald-400) / <alpha-value>)",
+    "500": "rgb(var(--c-emerald-500) / <alpha-value>)",
+    "600": "rgb(var(--c-emerald-600) / <alpha-value>)",
+    "700": "rgb(var(--c-emerald-700) / <alpha-value>)",
+    "800": "rgb(var(--c-emerald-800) / <alpha-value>)",
+    "900": "rgb(var(--c-emerald-900) / <alpha-value>)"
+  },
+  "amber": {
+    "50": "rgb(var(--c-amber-50) / <alpha-value>)",
+    "100": "rgb(var(--c-amber-100) / <alpha-value>)",
+    "200": "rgb(var(--c-amber-200) / <alpha-value>)",
+    "300": "rgb(var(--c-amber-300) / <alpha-value>)",
+    "400": "rgb(var(--c-amber-400) / <alpha-value>)",
+    "500": "rgb(var(--c-amber-500) / <alpha-value>)",
+    "600": "rgb(var(--c-amber-600) / <alpha-value>)",
+    "700": "rgb(var(--c-amber-700) / <alpha-value>)",
+    "800": "rgb(var(--c-amber-800) / <alpha-value>)",
+    "900": "rgb(var(--c-amber-900) / <alpha-value>)"
+  },
+  "red": {
+    "50": "rgb(var(--c-red-50) / <alpha-value>)",
+    "100": "rgb(var(--c-red-100) / <alpha-value>)",
+    "200": "rgb(var(--c-red-200) / <alpha-value>)",
+    "300": "rgb(var(--c-red-300) / <alpha-value>)",
+    "400": "rgb(var(--c-red-400) / <alpha-value>)",
+    "500": "rgb(var(--c-red-500) / <alpha-value>)",
+    "600": "rgb(var(--c-red-600) / <alpha-value>)",
+    "700": "rgb(var(--c-red-700) / <alpha-value>)",
+    "800": "rgb(var(--c-red-800) / <alpha-value>)",
+    "900": "rgb(var(--c-red-900) / <alpha-value>)"
+  },
+  "violet": {
+    "50": "rgb(var(--c-violet-50) / <alpha-value>)",
+    "100": "rgb(var(--c-violet-100) / <alpha-value>)",
+    "200": "rgb(var(--c-violet-200) / <alpha-value>)",
+    "300": "rgb(var(--c-violet-300) / <alpha-value>)",
+    "400": "rgb(var(--c-violet-400) / <alpha-value>)",
+    "500": "rgb(var(--c-violet-500) / <alpha-value>)",
+    "600": "rgb(var(--c-violet-600) / <alpha-value>)",
+    "700": "rgb(var(--c-violet-700) / <alpha-value>)",
+    "800": "rgb(var(--c-violet-800) / <alpha-value>)",
+    "900": "rgb(var(--c-violet-900) / <alpha-value>)"
+  },
+  "sky": {
+    "50": "rgb(var(--c-sky-50) / <alpha-value>)",
+    "100": "rgb(var(--c-sky-100) / <alpha-value>)",
+    "200": "rgb(var(--c-sky-200) / <alpha-value>)",
+    "300": "rgb(var(--c-sky-300) / <alpha-value>)",
+    "400": "rgb(var(--c-sky-400) / <alpha-value>)",
+    "500": "rgb(var(--c-sky-500) / <alpha-value>)",
+    "600": "rgb(var(--c-sky-600) / <alpha-value>)",
+    "700": "rgb(var(--c-sky-700) / <alpha-value>)",
+    "800": "rgb(var(--c-sky-800) / <alpha-value>)",
+    "900": "rgb(var(--c-sky-900) / <alpha-value>)"
+  },
+  "gold_tints": {
+    "50": "rgb(var(--c-gold-50) / <alpha-value>)",
+    "100": "rgb(var(--c-gold-100) / <alpha-value>)"
+  },
+  "accent_tints": {
+    "50": "rgb(var(--c-accent-50) / <alpha-value>)",
+    "100": "rgb(var(--c-accent-100) / <alpha-value>)"
+  }
+}
