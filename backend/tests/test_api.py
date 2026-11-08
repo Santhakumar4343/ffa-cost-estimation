@@ -53,7 +53,7 @@ def test_sales_never_sees_internal_cost_fields(client):
 
 
 def test_vague_brief_is_low_confidence_with_questions(client):
-    est = _create(client, sample=3)
+    est = _create(client, sample=4)
     assert est["result"]["confidence"]["band"] == "Low"
     assert est["status"] == "NEEDS_CLARIFICATION"
     assert any(q["critical"] for q in est["result"]["questions"])
@@ -62,7 +62,7 @@ def test_vague_brief_is_low_confidence_with_questions(client):
 
 
 def test_answers_raise_confidence_and_bump_version(client):
-    est = _create(client, sample=3)
+    est = _create(client, sample=4)
     before = est["result"]["confidence"]["score"]
     answers = {q["id"]: "Android app for customers, 5000 users, Razorpay, launch in 4 months"
                for q in est["result"]["questions"]}
@@ -102,6 +102,16 @@ def test_document_upload_rejects_spoofed_pdf(client):
     r = client.post("/api/documents/extract", files={"file": ("evil.pdf", b"MZ\x90\x00not a pdf", "application/pdf")},
                     headers={"X-Demo-Role": "sales"})
     assert r.status_code == 415
+
+
+def test_static_website_brief_is_5000_without_app_modules(client):
+    s = next(b for b in ref.SAMPLE_BRIEFS if b["title"].startswith("Static website"))
+    r = client.post("/api/estimates", json={"category": s["category"], "platforms": s["platforms"],
+                                            "brief": s["brief"]}, headers={"X-Demo-Role": "sales"}).json()
+    codes = set(r["scope"]["feature_codes"])
+    assert "STATIC_SITE" in codes
+    assert not codes & {"AUTH", "ADMIN", "PAY"}          # "No login needed" must not add login
+    assert r["result"]["client_range"]["expected"] == "5000"
 
 
 def test_prompt_injection_text_is_treated_as_data(client):

@@ -5,7 +5,7 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { PageHeader } from "../components/Layout";
 import { Button, Card, ConfidenceBadge, EmptyState, Skeleton, StatusPill } from "../components/ui";
 import { api } from "../lib/api";
-import { dateTime, inrShort, shortDate } from "../lib/format";
+import { dateTime, inr, shortDate } from "../lib/format";
 import type { EstimateSummary } from "../lib/types";
 
 export function EstimatesTable({ rows }: { rows: EstimateSummary[] }) {
@@ -40,8 +40,8 @@ export function EstimatesTable({ rows }: { rows: EstimateSummary[] }) {
               </td>
               <td className="whitespace-nowrap px-3 py-3 text-ink-2">{e.category_name}</td>
               <td className="px-3 py-3"><StatusPill status={e.status} /></td>
-              <td className="num whitespace-nowrap px-3 py-3 text-right font-medium">{inrShort(e.client_range.low)} – {inrShort(e.client_range.high)}</td>
-              <td className="num px-3 py-3 text-right text-ink-2">{e.weeks} wks</td>
+              <td className="num whitespace-nowrap px-3 py-3 text-right font-medium">{inr(e.client_range.low)} – {inr(e.client_range.high)}</td>
+              <td className="num px-3 py-3 text-right text-ink-2">{e.days} days</td>
               <td className="px-3 py-3"><ConfidenceBadge band={e.confidence_band} score={e.confidence} /></td>
               <td className="whitespace-nowrap px-5 py-3 text-right text-[12.5px] text-ink-3" title={dateTime(e.updated_at)}>{shortDate(e.updated_at)}</td>
             </tr>

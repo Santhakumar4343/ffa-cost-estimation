@@ -16,7 +16,7 @@ const NAV = [
 ];
 const NAV2 = [
   { to: "/catalogue", label: "Feature catalogue", icon: BookOpen, end: false },
-  { to: "/pricing", label: "Rates & benchmarks", icon: Wallet, end: false },
+  { to: "/pricing", label: "Pricing rules", icon: Wallet, end: false },
 ];
 
 function NavItem({ to, label, icon: Icon, end }: { to: string; label: string; icon: typeof LayoutDashboard; end?: boolean }) {

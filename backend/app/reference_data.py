@@ -8,10 +8,10 @@ Benchmark figures are the ones published in the proposal (§4.2) and are labelle
 
 from decimal import Decimal as D
 
-CATALOGUE_VERSION = "CAT-2026.11-demo"
+CATALOGUE_VERSION = "CAT-2026.11-smb"
 RATE_CARD_VERSION = "RC-2026.11-demo"
-POLICY_VERSION = "POL-2026.11-demo"
-RULES_VERSION = "RULES-0.1"
+POLICY_VERSION = "POL-2026.11-smb-ai"
+RULES_VERSION = "RULES-0.2-smb"
 MARKET_DATA_DATE = "2026-11-07"
 
 # ---------------------------------------------------------------- categories
@@ -70,29 +70,36 @@ RATE_CARD_MONTHLY = {
 RATE_CARD = {k: (v / PRODUCTIVE_HOURS_PER_MONTH).quantize(D("1")) for k, v in RATE_CARD_MONTHLY.items()}
 
 # ---------------------------------------------------------------- commercial policy (Finance)
+# Target market: small businesses & startups (AP / Telangana). Budget band ₹5,000 – ₹1,00,000.
+# Delivery is AI-accelerated: a static page ≈ 1 AI-assisted hour ≈ ₹5,000; nothing is quoted above ₹1,00,000.
 POLICY = {
-    "overhead_pct": D("0.10"),
-    "commission_pct": D("0.10"),          # share of client price (basis to be confirmed: Q-1)
+    "pricing_model": "SMB · AI-accelerated delivery",
+    # Traditional-equivalent effort (catalogue hours) → AI-assisted delivery hours.
+    "ai_productivity_factor": D("0.016"),
+    "price_per_ai_hour": D("5000"),        # ₹ per AI-assisted delivery hour (static page ≈ 1 h ≈ ₹5,000)
+    "min_project_price": D("5000"),        # floor of the SMB band
+    "max_project_price": D("100000"),      # hard cap of the SMB band — never quoted above this
+    "price_rounding": D("500"),            # client prices are whole rupees, rounded to ₹500
+    "internal_cost_per_ai_hour": D("1200"),  # developer time + AI tooling, fully loaded (Finance to confirm)
+    "ai_tooling_per_project": D("500"),    # AI tool usage, preview hosting, misc.
+    "ai_hours_per_day": D("5"),            # productive AI-assisted build hours per working day
+    "commission_pct": D("0.10"),           # share of client price (basis to be confirmed: Q-1)
     "commission_basis": "Invoice value (to be confirmed by Finance)",
-    "target_margin_pct": D("0.20"),
-    "contingency": {"High": D("0.12"), "Medium": D("0.20"), "Low": D("0.30")},
-    "gst_pct": D("0.18"),                 # shown separately, never inside the price (Q-8)
-    "misc_expenses": D("5000"),
-    "build_infra_per_month": D("3000"),
-    "productive_hours_per_week": 30,
-    "validity_days": 30,
-    "client_rounding": D("1000"),
+    "contingency": {"High": D("0.10"), "Medium": D("0.15"), "Low": D("0.25")},
+    "gst_pct": D("0.18"),                  # shown separately, never inside the price (Q-8)
+    "validity_days": 15,
     "maintenance_pct_per_year": D("0.15"),
-    "milestone_payments": [D("0.20"), D("0.30"), D("0.30"), D("0.20")],
-    # cross-cutting effort rules
-    "qa_pct_of_build": D("0.22"),
-    "pm_pct_of_total": D("0.10"),
-    "discovery_base_hours": D("16"),
+    # Payment terms: 50/50 for small jobs, 40/30/30 from this price upward.
+    "staged_payment_threshold": D("50000"),
+    # cross-cutting traditional-equivalent effort rules (lean SMB delivery)
+    "qa_pct_of_build": D("0.20"),
+    "pm_pct_of_total": D("0.08"),
+    "discovery_base_hours": D("4"),
     "discovery_hours_per_item": D("3"),
-    "devops_base_hours": D("24"),
-    "devops_hours_per_platform_group": D("12"),
-    "security_base_hours": D("8"),
-    "security_sensitive_hours": D("16"),
+    "devops_base_hours": D("8"),
+    "devops_hours_per_platform_group": D("4"),
+    "security_base_hours": D("2"),
+    "security_sensitive_hours": D("8"),
     "native_dual_platform_factor": D("1.8"),
     "multi_platform_design_factor": D("1.4"),
 }
@@ -149,6 +156,11 @@ def _h(**likely: float) -> dict:
 
 
 COMMON_FEATURES = [
+    dict(code="STATIC_SITE", name="Static website / landing page (up to 5 pages)", module="Website", tier="essential",
+         keywords=["static", "landing page", "one page", "one-page", "single page", "single-page", "brochure",
+                   "simple website", "basic website", "informational website", "company website",
+                   "portfolio website", "business website"],
+         hours=_h(design=6, frontend=14)),
     dict(code="AUTH", name="User registration & login (OTP / email)", module="Accounts", tier="essential",
          keywords=["login", "log in", "sign up", "signup", "register", "registration", "otp", "account"],
          hours=_h(design=6, frontend=16, backend=20, mobile=18)),
@@ -178,7 +190,7 @@ COMMON_FEATURES = [
          keywords=["map", "location", "gps", "nearby", "directions"],
          hours=_h(frontend=10, backend=10, mobile=14, integration=16)),
     dict(code="CMS", name="Content pages / CMS", module="Content", tier="essential",
-         keywords=["about us", "content", "blog", "landing page", "cms", "website"],
+         keywords=["blog", "cms", "content management", "content pages", "manage content"],
          hours=_h(design=6, frontend=12, backend=8)),
     dict(code="REVIEWS", name="Ratings & reviews", module="Engagement", tier="advanced",
          keywords=["review", "rating", "feedback"], hours=_h(frontend=8, backend=10, mobile=8)),
@@ -308,10 +320,11 @@ def feature_index(category: str) -> dict[str, dict]:
 
 
 # ---------------------------------------------------------------- recurring cost templates
-CLOUD_TEMPLATES = {  # monthly INR, DEMO PLACEHOLDERS — to be priced with provider calculators (§4.1)
-    "S": {"label": "Small (< 5,000 users)", "low": D("4000"), "high": D("8000")},
-    "M": {"label": "Medium (5,000–50,000 users)", "low": D("12000"), "high": D("22000")},
-    "L": {"label": "Large (> 50,000 users)", "low": D("35000"), "high": D("65000")},
+CLOUD_TEMPLATES = {  # monthly INR — DEMO PLACEHOLDERS for SMB hosting (static hosting / small VPS / managed DB)
+    "XS": {"label": "Static site (free tier / shared hosting)", "low": D("0"), "high": D("500")},
+    "S": {"label": "Small app (< 5,000 users)", "low": D("800"), "high": D("2500")},
+    "M": {"label": "Growing app (5,000–50,000 users)", "low": D("2500"), "high": D("7000")},
+    "L": {"label": "Large app (> 50,000 users)", "low": D("7000"), "high": D("20000")},
 }
 THIRD_PARTY = {
     "NOTIF": "SMS / WhatsApp / email: usage-based, typically ₹0.15–₹0.80 per message depending on channel and provider",
@@ -322,7 +335,7 @@ THIRD_PARTY = {
     "CONTENT": "Video hosting / streaming: usage-based storage and bandwidth",
 }
 FIXED_ANNUAL = [
-    ("Domain & SSL", "₹1,500–₹3,000 per year"),
+    ("Domain & SSL", "Domain ₹800–₹1,500 per year; SSL free (Let's Encrypt)"),
 ]
 APP_STORE = [
     ("Apple Developer Program", "USD 99 per year (client account)"),
@@ -344,8 +357,6 @@ BENCHMARKS = [
      "value": "Junior ₹500–1,200/h · Mid ₹1,200–2,500/h · Senior ₹2,500–5,000+/h", "captured": "2026-11-07",
      "use": "Provisional bands; validate with local quotes.", "reliability": "Low–Medium"},
 ]
-# Sanity band for the implied blended price per hour (junior–senior freelance band from §4.2).
-BENCHMARK_HOURLY_BAND = (D("500"), D("5000"))
 
 # ---------------------------------------------------------------- sample briefs for the demo
 SAMPLE_BRIEFS = [
@@ -369,6 +380,10 @@ SAMPLE_BRIEFS = [
                "where students enrol in courses and batches, watch recorded video lessons and take weekly MCQ "
                "tests. Teachers mark attendance. Parents should get SMS alerts for attendance and test results. "
                "Fees must be paid online. We also want live classes through Zoom.")},
+    {"title": "Static website for a clinic", "category": "business", "platforms": ["web"],
+     "client_name": "Sri Sai Dental Clinic",
+     "brief": ("We are a dental clinic in Vijayawada. We need a simple website with 4 pages: home, about us, "
+               "our treatments and contact with a Google map. No login needed. We want it live in a week.")},
     {"title": "Vague food delivery idea", "category": "food", "platforms": ["android"],
      "client_name": "",
      "brief": "I want an app like a food delivery app for my town. What will it cost?"},

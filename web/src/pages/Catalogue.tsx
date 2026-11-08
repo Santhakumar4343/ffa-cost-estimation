@@ -15,7 +15,7 @@ export default function Catalogue() {
 
   return (
     <>
-      <PageHeader title="Feature catalogue" subtitle={`Versioned, expert-reviewed effort ranges per feature and workstream · ${meta?.versions.catalogue ?? ""}`} />
+      <PageHeader title="Feature catalogue" subtitle={`Traditional-equivalent effort per feature (hours) — the engine converts these to AI-assisted hours · ${meta?.versions.catalogue ?? ""}`} />
       <Card bodyClass="p-0">
         <div className="px-5 pt-2">
           <Tabs value={cat} onChange={setCat} tabs={(meta?.categories ?? []).map((c) => ({ key: c.key, label: c.name }))} />
@@ -60,7 +60,7 @@ export default function Catalogue() {
               </tbody>
             </table>
             <p className="border-t border-line px-5 py-3 text-[12px] text-ink-3">
-              Likely hours shown; hover for low / likely / high. Demo placeholders — in production the BA and Tech Lead own and review these values; each change is versioned and audited.
+              Traditional-equivalent likely hours shown (hover for low / likely / high); pricing uses AI-assisted hours = these × the AI productivity factor. Demo placeholders — in production the BA and Tech Lead own and review these values; each change is versioned and audited.
             </p>
           </div>
         )}

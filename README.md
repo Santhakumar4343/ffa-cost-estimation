@@ -9,6 +9,20 @@ An AI-assisted project cost estimation platform for Failure Folks Academy. This 
 | API, estimation engine, AI extraction | Python 3.12, FastAPI, SQLAlchemy, Pydantic, Anthropic SDK | `backend/` |
 | Web app | React 18, TypeScript, Vite, Tailwind CSS, TanStack Query | `web/` |
 
+## Pricing model: SMB, AI-accelerated
+
+The app targets small businesses and startups (Andhra Pradesh and Telangana). The rules are:
+
+- **Effort:** catalogue scope → traditional-equivalent hours → × AI productivity factor (0.016) = **AI-assisted delivery hours**.
+- **Contingency:** added according to the confidence level (10 / 15 / 25%).
+- **Price:** billable hours × **₹5,000 per AI-assisted hour**.
+- **Limits:** kept inside **₹5,000 – ₹1,00,000** (a hard cap) and rounded to ₹500. Prices are whole rupees, with no decimals or lakh abbreviations.
+- **Static website / landing page:** about 1 hour, so **₹5,000**. Typical apps fall between ₹25,000 and ₹1,00,000.
+- **Timeline:** in working days. Payment is 50/50, or 40/30/30 from ₹50,000.
+- **Finance view:** internal cost (₹1,200 per AI-assisted hour + ₹500 tooling), commission (10%) and margin. GST (18%) is always shown separately.
+
+All values are in `backend/app/reference_data.py` (`POLICY`) and are placeholders until Finance confirms them. When the pricing rules change, existing estimates are re-priced automatically at container start, as a new, audited version.
+
 ## Run it
 
 You need Python 3.12+, [uv](https://docs.astral.sh/uv/) and Node 18+.

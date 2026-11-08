@@ -31,6 +31,8 @@ RUN groupadd --system app \
     && mkdir -p /data && chown app:app /data
 COPY --chown=app:app app ./app
 COPY --chown=app:app seed_demo.py docker-entrypoint.sh ./
+# Guard against Windows (CRLF) checkouts: /bin/sh cannot run a script with \r line endings.
+RUN sed -i 's/\r$//' docker-entrypoint.sh
 ENV PORT=8880 \
     DATABASE_URL=sqlite:////data/estimator.db \
     WEB_CONCURRENCY=2 \

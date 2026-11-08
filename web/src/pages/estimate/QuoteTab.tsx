@@ -4,7 +4,7 @@ import { BadgeCheck, Calculator, CheckCircle2, Circle, Printer, Undo2 } from "lu
 import { useState } from "react";
 import { Alert, Button, Card } from "../../components/ui";
 import { api, ApiError } from "../../lib/api";
-import { addDays, date, dateTime, inr, inrShort, pct } from "../../lib/format";
+import { addDays, date, dateTime, inr, pct } from "../../lib/format";
 import type { Estimate } from "../../lib/types";
 
 function ApprovalPanel({ est, onUpdated }: { est: Estimate; onUpdated: (e: Estimate) => void }) {
@@ -108,8 +108,8 @@ export default function QuoteTab({ est, onUpdated }: { est: Estimate; onUpdated:
                   <tr key={t.key} className={clsx("border-b border-line", t.recommended && "bg-brand-50/50")}>
                     <td className="py-2 font-semibold">{t.name}{t.recommended && <span className="ml-1.5 text-[11px] font-medium text-brand-700">(recommended)</span>}</td>
                     <td className="py-2 text-ink-2">{t.features.length} features</td>
-                    <td className="num py-2 text-right">{t.weeks} weeks</td>
-                    <td className="num py-2 text-right font-medium">{inrShort(t.price.low)} – {inrShort(t.price.high)}</td>
+                    <td className="num py-2 text-right">{t.days} days</td>
+                    <td className="num py-2 text-right font-medium">{inr(t.price.low)} – {inr(t.price.high)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -132,7 +132,7 @@ export default function QuoteTab({ est, onUpdated }: { est: Estimate; onUpdated:
               <tbody>
                 {r.timeline.milestones.map((m) => (
                   <tr key={m.name} className="border-b border-line">
-                    <td className="py-1.5">{m.name}</td><td className="num py-1.5 text-right text-ink-3">Week {m.week}</td>
+                    <td className="py-1.5">{m.name}</td><td className="num py-1.5 text-right text-ink-3">{m.day === 0 ? "On confirmation" : `Day ${m.day}`}</td>
                     <td className="num py-1.5 text-right font-medium">{pct(m.payment_pct)}</td>
                   </tr>
                 ))}
@@ -145,7 +145,7 @@ export default function QuoteTab({ est, onUpdated }: { est: Estimate; onUpdated:
               <h3 className="text-[12px] font-semibold uppercase tracking-wider text-brand-800">Recurring costs (separate)</h3>
               <ul className="mt-2 space-y-1 text-[12.5px] text-ink-2">
                 <li>Cloud hosting: {inr(r.recurring.cloud.monthly_low)}–{inr(r.recurring.cloud.monthly_high)} / month</li>
-                <li>Maintenance & support: {inrShort(r.recurring.maintenance.annual_low)}–{inrShort(r.recurring.maintenance.annual_high)} / year</li>
+                <li>Maintenance & support: {inr(r.recurring.maintenance.annual_low)}–{inr(r.recurring.maintenance.annual_high)} / year</li>
                 {r.recurring.third_party.map((t) => <li key={t.item}>{t.description}</li>)}
               </ul>
             </div>

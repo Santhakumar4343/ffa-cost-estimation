@@ -6,7 +6,7 @@ import {
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { Alert, Badge, ConfidenceRing, EmptyState, PageLoader, StatusPill, Tabs } from "../components/ui";
 import { api, ApiError } from "../lib/api";
-import { date, inrShort } from "../lib/format";
+import { date, inr } from "../lib/format";
 import type { Estimate } from "../lib/types";
 import EstimateTab from "./estimate/EstimateTab";
 import HistoryTab from "./estimate/HistoryTab";
@@ -102,10 +102,10 @@ export default function EstimateDetail() {
               <div>
                 <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-navy-200">Indicative budget · excl. GST</div>
                 <div className="num mt-1.5 whitespace-nowrap text-[28px] font-bold tracking-tight text-gold-400">
-                  {inrShort(r.client_range.low)} <span className="text-gold-200/70">–</span> {inrShort(r.client_range.high)}
+                  {inr(r.client_range.low)} <span className="text-gold-200/70">–</span> {inr(r.client_range.high)}
                 </div>
                 <div className="num mt-1 text-[12.5px] text-navy-200">
-                  Expected <span className="font-semibold text-white">{inrShort(r.client_range.expected)}</span> · {r.timeline.weeks.expected} weeks
+                  Expected <span className="font-semibold text-white">{inr(r.client_range.expected)}</span> · {r.timeline.days.expected} working days
                 </div>
               </div>
               <ConfidenceRing score={r.confidence.score} band={r.confidence.band} size={58} onDark />
@@ -119,7 +119,7 @@ export default function EstimateDetail() {
         <div className="no-print mb-5 grid gap-2.5 md:grid-cols-2">
           {flags.map((f, i) => (
             <Alert key={i} tone={f.severity === "critical" ? "critical" : "warning"}
-              title={f.kind === "timeline" ? "Timeline risk" : f.kind === "budget" ? "Budget gap" : f.kind === "platform" ? "Scope conflict" : "Conflicting requirement"}>
+              title={f.kind === "timeline" ? "Timeline risk" : f.kind === "budget" ? "Budget gap" : f.kind === "cap" ? "₹1,00,000 limit reached" : f.kind === "platform" ? "Scope conflict" : "Conflicting requirement"}>
               {f.description}
             </Alert>
           ))}

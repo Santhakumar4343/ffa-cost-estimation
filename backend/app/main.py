@@ -104,8 +104,7 @@ def meta():
         "complexity_factors": ref.COMPLEXITY_FACTORS, "workstreams": ref.WORKSTREAMS,
         "roles": {k: v["name"] for k, v in service.ROLES.items()},
         "sample_briefs": ref.SAMPLE_BRIEFS,
-        "versions": {"catalogue": ref.CATALOGUE_VERSION, "rate_card": ref.RATE_CARD_VERSION,
-                     "policy": ref.POLICY_VERSION},
+        "versions": {"catalogue": ref.CATALOGUE_VERSION, "policy": ref.POLICY_VERSION},
         "ai_mode": settings.ai_mode,
     }
 
@@ -120,18 +119,17 @@ def catalogue(category: str):
 @app.get("/api/pricing")
 def pricing(role: str = Depends(current_role)):
     internal = service.ROLES[role]["internal"]
-    out = {"benchmarks": ref.BENCHMARKS, "versions": {"rate_card": ref.RATE_CARD_VERSION,
-                                                       "policy": ref.POLICY_VERSION},
-           "visible": internal}
+    p = ref.POLICY
+    # Client-facing pricing rules are visible to every role; internal economics to Finance only.
+    out = {"benchmarks": ref.BENCHMARKS, "versions": {"policy": ref.POLICY_VERSION}, "visible": internal,
+           "rules": service.jsonable({k: p[k] for k in (
+               "pricing_model", "price_per_ai_hour", "min_project_price", "max_project_price", "price_rounding",
+               "gst_pct", "validity_days", "maintenance_pct_per_year", "staged_payment_threshold")}),
+           "hosting": service.jsonable(ref.CLOUD_TEMPLATES)}
     if internal:
-        p = ref.POLICY
-        out["rate_card"] = [{"role": k, "name": ref.ROLES[k], "monthly": str(ref.RATE_CARD_MONTHLY[k]), "rate": str(v)}
-                            for k, v in ref.RATE_CARD.items()]
-        out["productive_hours_per_month"] = str(ref.PRODUCTIVE_HOURS_PER_MONTH)
         out["policy"] = service.jsonable({k: p[k] for k in (
-            "overhead_pct", "commission_pct", "commission_basis", "target_margin_pct", "contingency", "gst_pct",
-            "validity_days", "maintenance_pct_per_year", "productive_hours_per_week", "misc_expenses",
-            "build_infra_per_month")})
+            "ai_productivity_factor", "internal_cost_per_ai_hour", "ai_tooling_per_project", "ai_hours_per_day",
+            "commission_pct", "commission_basis", "contingency")})
     return out
 
 

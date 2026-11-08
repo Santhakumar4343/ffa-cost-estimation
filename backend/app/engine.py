@@ -1,4 +1,4 @@
-"""Deterministic estimation engine (blueprint §11).
+"""Deterministic estimation engine (blueprint §11) — SMB · AI-accelerated pricing model.
 
 Pure functions only: no I/O, no AI, no clock reads except the caller-supplied timestamp.
 All money is Decimal. The LLM never supplies a number to this module.
@@ -66,7 +66,6 @@ class EstimationInput:
     input_groups: dict[str, str] = field(default_factory=dict)      # group -> PROVIDED|PARTIAL|MISSING
     verification_ratio: float | None = None                         # verified explicit / explicit
     expected_users: int | None = None
-    rates: dict[str, Decimal] = field(default_factory=lambda: dict(ref.RATE_CARD))
     policy: dict = field(default_factory=lambda: dict(ref.POLICY))
 
 
@@ -184,55 +183,54 @@ def _workstream_totals(lines: list[dict], multiplier: Decimal, inp: EstimationIn
 def _pert(lo: Decimal, li: Decimal, hi: Decimal) -> Decimal:
     return (lo + 4 * li + hi) / 6
 
-
-def _timeline(ws: dict, inp: EstimationInput) -> dict:
-    per_week = inp.policy["productive_hours_per_week"]
-    both = "web" in inp.platforms and any(p in inp.platforms for p in ("android", "ios"))
-    devs = 3 if both else 2
-    discovery = max(1, math.ceil(float(ws["discovery"] + ws["design"] * D("0.6")) / (2 * per_week)))
-    build = max(2, math.ceil(float(ws["frontend"] + ws["backend"] + ws["mobile"] + ws["integration"]) / (devs * per_week)))
-    stabilise = max(1, math.ceil(float(ws["qa"] * D("0.35")) / per_week))
-    release = 1
-    return {"discovery": discovery, "build": build, "stabilise": stabilise, "release": release,
-            "total": discovery + build + stabilise + release, "devs": devs}
+# ---------------------------------------------------------------- SMB · AI-accelerated pricing
+def _ai_hours(traditional: Decimal, p: dict) -> Decimal:
+    return traditional * p["ai_productivity_factor"]
 
 
-def _cost(role_hours: dict[str, Decimal], weeks: int, contingency_pct: Decimal, inp: EstimationInput) -> dict:
+def _smb_price(billable_hours: Decimal, p: dict) -> tuple[Decimal, Decimal, bool]:
+    """Return (client price, uncapped price, capped?) — whole rupees, rounded, inside the SMB band."""
+    uncapped = billable_hours * p["price_per_ai_hour"]
+    clamped = min(max(uncapped, p["min_project_price"]), p["max_project_price"])
+    price = round_to(clamped, p["price_rounding"])
+    price = min(max(price, p["min_project_price"]), p["max_project_price"])
+    return price, rupees(uncapped), uncapped > p["max_project_price"]
+
+
+def _cost(ai_hours: Decimal, contingency_pct: Decimal, inp: EstimationInput) -> dict:
     p = inp.policy
-    c, m = p["commission_pct"], p["target_margin_pct"]
-    if c + m >= 1:
-        raise ValueError("Policy invalid: commission + margin must be below 100%")
-    labour_lines = []
-    for role, h in role_hours.items():
-        if h <= 0:
-            continue
-        rate = inp.rates[role]
-        labour_lines.append({"role": role, "role_name": ref.ROLES[role], "hours": hours(h), "rate": rate,
-                             "cost": rupees(h * rate)})
-    labour = sum((l["cost"] for l in labour_lines), ZERO)
-    months = max(1, math.ceil(weeks / 4.33))
-    build_infra = p["build_infra_per_month"] * months
-    expenses = p["misc_expenses"] + build_infra
-    internal = labour + expenses
-    contingency = rupees(internal * contingency_pct)
-    overhead = rupees(internal * p["overhead_pct"])
-    base = internal + contingency + overhead
-    price = rupees(base / (1 - c - m))
-    commission = rupees(price * c)
-    margin = price - base - commission
+    contingency_hours = ai_hours * contingency_pct
+    billable = ai_hours + contingency_hours
+    price, uncapped, capped = _smb_price(billable, p)
+    internal = rupees(billable * p["internal_cost_per_ai_hour"]) + p["ai_tooling_per_project"]
+    commission = rupees(price * p["commission_pct"])
+    margin = price - internal - commission
     gst = rupees(price * p["gst_pct"])
     return {
-        "labour_lines": labour_lines, "direct_labour": labour, "misc_expenses": p["misc_expenses"],
-        "build_infra": build_infra, "build_months": months, "expenses": expenses, "internal_cost": internal,
-        "contingency_pct": contingency_pct, "contingency": contingency, "overhead_pct": p["overhead_pct"],
-        "overhead": overhead, "base": base, "commission_pct": c, "commission": commission,
-        "margin_pct": m, "margin": margin, "price_before_tax": price, "gst_pct": p["gst_pct"], "gst": gst,
-        "price_with_tax": price + gst,
+        "ai_hours": hours(ai_hours), "contingency_pct": contingency_pct, "contingency_hours": hours(contingency_hours),
+        "billable_hours": hours(billable), "price_per_ai_hour": p["price_per_ai_hour"],
+        "uncapped_price": uncapped, "capped": capped, "floored": uncapped < p["min_project_price"],
+        "delivery_cost": rupees(billable * p["internal_cost_per_ai_hour"]),
+        "internal_cost_per_ai_hour": p["internal_cost_per_ai_hour"], "ai_tooling": p["ai_tooling_per_project"],
+        "internal_cost": internal, "commission_pct": p["commission_pct"], "commission": commission,
+        "margin": margin, "margin_pct": (margin / price).quantize(D("0.001")) if price else ZERO,
+        "price_before_tax": price, "gst_pct": p["gst_pct"], "gst": gst, "price_with_tax": price + gst,
     }
+
+
+def _timeline(billable: Decimal, p: dict) -> dict:
+    """Working days for AI-accelerated delivery (client review time included)."""
+    build = max(1, math.ceil(billable / p["ai_hours_per_day"]))
+    discovery = 1
+    review = 1 if billable <= 5 else 2
+    launch = 1
+    return {"discovery": discovery, "build": build, "review": review, "launch": launch,
+            "total": discovery + build + review + launch}
 
 
 def _core(features: list[dict], custom: list[CustomModule], inp: EstimationInput, multiplier: Decimal,
           contingency_pct: Decimal) -> dict:
+    p = inp.policy
     sub = EstimationInput(**{**inp.__dict__, "custom_modules": custom,
                              "feature_codes": [f["code"] for f in features]})
     lines = _feature_lines(features, sub)
@@ -242,24 +240,39 @@ def _core(features: list[dict], custom: list[CustomModule], inp: EstimationInput
         lo, li, hi = sc["low"][w], sc["likely"][w], sc["high"][w]
         if lo == li == hi == 0:
             continue
+        exp = _pert(lo, li, hi)
         ws_rows.append({"workstream": w, "label": label, "role": ref.WORKSTREAM_ROLE[w],
-                        "low": hours(lo), "likely": hours(li), "high": hours(hi), "expected": hours(_pert(lo, li, hi))})
-    scen_ws = {
-        "low": {r["workstream"]: r["low"] for r in ws_rows},
-        "expected": {r["workstream"]: r["expected"] for r in ws_rows},
-        "high": {r["workstream"]: r["high"] for r in ws_rows},
+                        "traditional": hours(exp),
+                        "low": hours(_ai_hours(lo, p)), "likely": hours(_ai_hours(li, p)),
+                        "high": hours(_ai_hours(hi, p)), "expected": hours(_ai_hours(exp, p))})
+    traditional = {
+        "low": sum((sc["low"][w] for w in ref.WORKSTREAMS), ZERO),
+        "expected": sum((_pert(sc["low"][w], sc["likely"][w], sc["high"][w]) for w in ref.WORKSTREAMS), ZERO),
+        "high": sum((sc["high"][w] for w in ref.WORKSTREAMS), ZERO),
     }
-    result = {"lines": lines, "workstreams": ws_rows, "hours": {}, "timeline": {}, "cost": {}}
+    result = {"lines": lines, "workstreams": ws_rows, "traditional": {s: hours(v) for s, v in traditional.items()},
+              "hours": {}, "timeline": {}, "cost": {}}
     for s in SCENARIOS:
-        ws = {w: scen_ws[s].get(w, ZERO) for w in ref.WORKSTREAMS}
-        role_hours: dict[str, Decimal] = {r: ZERO for r in ref.ROLES}
-        for w, h in ws.items():
-            role_hours[ref.WORKSTREAM_ROLE[w]] += h
-        tl = _timeline(ws, inp)
-        result["hours"][s] = hours(sum(ws.values(), ZERO))
-        result["timeline"][s] = tl
-        result["cost"][s] = _cost(role_hours, tl["total"], contingency_pct, inp)
+        ai = _ai_hours(traditional[s], p)
+        cost = _cost(ai, contingency_pct, inp)
+        result["hours"][s] = hours(ai)
+        result["cost"][s] = cost
+        result["timeline"][s] = _timeline(cost["billable_hours"], p)
     return result
+
+
+def _payment_plan(price: Decimal, days: dict, p: dict) -> list[dict]:
+    end = days["total"]
+    if price >= p["staged_payment_threshold"]:
+        return [
+            {"name": "Advance — project kick-off", "day": 0, "payment_pct": D("0.40")},
+            {"name": "Working demo for review", "day": days["discovery"] + days["build"], "payment_pct": D("0.30")},
+            {"name": "Go-live & handover", "day": end, "payment_pct": D("0.30")},
+        ]
+    return [
+        {"name": "Advance — project kick-off", "day": 0, "payment_pct": D("0.50")},
+        {"name": "Go-live & handover", "day": end, "payment_pct": D("0.50")},
+    ]
 
 
 # ---------------------------------------------------------------- public API
@@ -274,7 +287,6 @@ def estimate(inp: EstimationInput, computed_at: str) -> dict:
     complexity = assess_complexity(inp)
     mult = complexity["multiplier"]
 
-    # Catalogue share needs raw lines (before contingency) — compute once.
     raw_lines = _feature_lines(features, inp)
     cat_hours = sum((l["likely"] for l in raw_lines if l["source"] == "catalogue"), ZERO)
     all_hours = cat_hours + sum((l["likely"] for l in raw_lines if l["source"] == "custom"), ZERO)
@@ -283,13 +295,12 @@ def estimate(inp: EstimationInput, computed_at: str) -> dict:
     contingency_pct = p["contingency"][confidence["band"]]
 
     main = _core(features, inp.custom_modules, inp, mult, contingency_pct)
-    step = p["client_rounding"]
-    client_range = {s: round_to(main["cost"][s]["price_before_tax"], step) for s in SCENARIOS}
+    client_range = {s: main["cost"][s]["price_before_tax"] for s in SCENARIOS}
 
-    # Tiers differ by SCOPE only (BR-10): each tier is a separate engine run.
+    # Tiers differ by SCOPE only (BR-10): each tier is a separate engine run, inside the same SMB band.
     tier_defs = [
         ("basic", "Basic", [f for f in features if f["tier"] == "essential"], [],
-         "Essential features only — fastest launch."),
+         "Essential features only — fastest, lowest cost launch."),
         ("standard", "Standard", features, inp.custom_modules, "Everything requested in the brief. Recommended."),
         ("premium", "Premium", features + addons, inp.custom_modules,
          "Standard plus suggested advanced features."),
@@ -300,28 +311,33 @@ def estimate(inp: EstimationInput, computed_at: str) -> dict:
             continue
         if key == "premium" and not addons:
             continue
+        if key == "basic" and len(feats) == len(features) and not inp.custom_modules:
+            continue  # Basic would be identical to Standard
         r = main if key == "standard" else _core(feats, custom, inp, mult, contingency_pct)
         tiers.append({
             "key": key, "name": name, "description": blurb, "recommended": key == "standard",
             "features": [{"code": f["code"], "name": f["name"], "tier": f["tier"],
                           "addon": f in addons} for f in feats] + [{"code": f"CUSTOM:{m.name}", "name": m.name,
                                                                    "tier": "custom", "addon": False} for m in custom],
-            "hours_expected": r["hours"]["expected"],
-            "weeks": r["timeline"]["expected"]["total"],
-            "price": {s: round_to(r["cost"][s]["price_before_tax"], step) for s in SCENARIOS},
+            "hours_expected": r["cost"]["expected"]["billable_hours"],
+            "days": r["timeline"]["expected"]["total"],
+            "capped": r["cost"]["expected"]["capped"],
+            "price": {s: r["cost"][s]["price_before_tax"] for s in SCENARIOS},
         })
 
     # Recurring & maintenance (BR-9: always separate from one-time price)
     users = inp.expected_users
-    size = "M" if users is None else "S" if users < 5000 else "M" if users < 50000 else "L"
+    static_only = bool(features) and all(f["code"] in ("STATIC_SITE", "CMS") for f in features) and not inp.custom_modules
+    size = "XS" if static_only else "S" if users is None or users < 5000 else "M" if users < 50000 else "L"
     cloud = ref.CLOUD_TEMPLATES[size]
     third_party = [{"item": code, "description": desc} for code, desc in ref.THIRD_PARTY.items()
                    if code in inp.feature_codes]
     maint_pct = p["maintenance_pct_per_year"]
+    step = p["price_rounding"]
     recurring = {
-        "cloud": {"size": size, "label": cloud["label"], "assumed": users is None,
+        "cloud": {"size": size, "label": cloud["label"], "assumed": users is None and not static_only,
                   "monthly_low": cloud["low"], "monthly_high": cloud["high"],
-                  "note": "Indicative; to be priced with the AWS/Azure/GCP calculator at quote time."},
+                  "note": "Indicative hosting for small businesses; confirmed at quote time."},
         "third_party": third_party,
         "fixed": [{"item": i, "description": d} for i, d in ref.FIXED_ANNUAL]
                  + ([{"item": i, "description": d} for i, d in ref.APP_STORE]
@@ -331,115 +347,110 @@ def estimate(inp: EstimationInput, computed_at: str) -> dict:
                         "note": "Annual maintenance & support (bug fixes, minor updates, monitoring)."},
     }
 
-    # Timeline & milestones (expected scenario)
+    # Timeline (working days) & payment plan
     tl = main["timeline"]["expected"]
     d_end = tl["discovery"]
     b_end = d_end + tl["build"]
-    s_end = b_end + tl["stabilise"]
-    end = s_end + tl["release"]
-    pays = p["milestone_payments"]
-    milestones = [
-        {"name": "Requirements & design sign-off", "week": d_end, "payment_pct": pays[0]},
-        {"name": "Mid-build demo", "week": d_end + max(1, tl["build"] // 2), "payment_pct": pays[1]},
-        {"name": "UAT ready", "week": b_end, "payment_pct": pays[2]},
-        {"name": "Go-live & handover", "week": end, "payment_pct": pays[3]},
-    ]
+    r_end = b_end + tl["review"]
+    end = r_end + tl["launch"]
     timeline = {
-        "weeks": {s: main["timeline"][s]["total"] for s in SCENARIOS},
-        "team": {"devs": tl["devs"], "hours_per_week": p["productive_hours_per_week"]},
+        "unit": "days",
+        "days": {s: main["timeline"][s]["total"] for s in SCENARIOS},
+        "team": {"ai_hours_per_day": p["ai_hours_per_day"]},
         "phases": [
-            {"name": "Discovery & design", "start": 0, "end": d_end},
-            {"name": "Build", "start": d_end, "end": b_end},
-            {"name": "QA & UAT", "start": b_end, "end": s_end},
-            {"name": "Release & handover", "start": s_end, "end": end},
+            {"name": "Requirements & design", "start": 0, "end": d_end},
+            {"name": "AI-assisted build", "start": d_end, "end": b_end},
+            {"name": "Client review & fixes", "start": b_end, "end": r_end},
+            {"name": "Launch & handover", "start": r_end, "end": end},
         ],
-        "milestones": milestones,
+        "milestones": _payment_plan(client_range["expected"], tl, p),
         "client_dependencies": [
-            "Timely feedback and sign-off at each milestone (within 3 working days)",
-            "Content, logos, product/service data supplied by the client",
-            "Third-party accounts (payment gateway, SMS/WhatsApp, app stores) opened in the client's name",
-            "Test accounts and a named decision maker for UAT",
+            "Quick feedback on the demo (within 1–2 working days)",
+            "Logo, photos, text and product/service details supplied by the client",
+            "Domain, hosting and third-party accounts (payment gateway, WhatsApp, app stores) in the client's name",
+            "One named decision maker for approvals",
         ],
     }
 
-    # Benchmark sanity check (C-10): benchmarks inform, never set the price.
-    exp_cost = main["cost"]["expected"]
-    implied = rupees(exp_cost["price_before_tax"] / main["hours"]["expected"]) if main["hours"]["expected"] else ZERO
-    lo_b, hi_b = ref.BENCHMARK_HOURLY_BAND
-    bench = {"implied_hourly": implied, "band_low": lo_b, "band_high": hi_b,
-             "status": "within" if lo_b <= implied <= hi_b else "below" if implied < lo_b else "above",
-             "source": "India freelance rate guide (2026), junior–senior band — proposal §4.2"}
+    e = main["cost"]["expected"]
+    band = {
+        "min": p["min_project_price"], "max": p["max_project_price"], "price": e["price_before_tax"],
+        "price_per_ai_hour": p["price_per_ai_hour"], "rounding": p["price_rounding"],
+        "uncapped": e["uncapped_price"], "capped": e["capped"], "floored": e["floored"],
+        "position": float((e["price_before_tax"] - p["min_project_price"])
+                          / (p["max_project_price"] - p["min_project_price"])),
+        "note": "SMB & startup band (AP / Telangana market): ₹5,000 – ₹1,00,000",
+    }
 
     trace = _trace(main, complexity, confidence, contingency_pct, client_range, inp)
 
     return {
         "computed_at": computed_at,
-        "versions": {"catalogue": ref.CATALOGUE_VERSION, "rate_card": ref.RATE_CARD_VERSION,
-                     "policy": ref.POLICY_VERSION, "rules": ref.RULES_VERSION,
+        "pricing_model": p["pricing_model"],
+        "versions": {"catalogue": ref.CATALOGUE_VERSION, "policy": ref.POLICY_VERSION, "rules": ref.RULES_VERSION,
                      "market_data_date": ref.MARKET_DATA_DATE},
         "complexity": complexity,
         "confidence": {**confidence, "contingency_pct": contingency_pct},
         "effort": {
+            "unit": "ai_hours",
+            "ai_factor": p["ai_productivity_factor"],
             "workstreams": main["workstreams"],
-            "lines": [{**l, "low": hours(l["low"] * (mult if l["workstream"] in ref.BUILD_WORKSTREAMS else 1)),
-                       "likely": hours(l["likely"] * (mult if l["workstream"] in ref.BUILD_WORKSTREAMS else 1)),
-                       "high": hours(l["high"] * (mult if l["workstream"] in ref.BUILD_WORKSTREAMS else 1))}
-                      for l in main["lines"]],
             "totals": main["hours"],
+            "billable": {s: main["cost"][s]["billable_hours"] for s in SCENARIOS},
+            "traditional": main["traditional"],
         },
         "cost": main["cost"],
         "client_range": client_range,
+        "band": band,
         "tiers": tiers,
         "recurring": recurring,
         "timeline": timeline,
-        "benchmark": bench,
         "trace": trace,
     }
 
 
 def _trace(main: dict, complexity: dict, confidence: dict, cpct: Decimal, client_range: dict,
            inp: EstimationInput) -> list[dict]:
+    p = inp.policy
     e = main["cost"]["expected"]
-    t = []
-    for w in main["workstreams"]:
-        t.append({"id": f"hours.{w['workstream']}", "group": "Effort", "internal": False,
-                  "label": f"{w['label']} hours (expected)",
-                  "formula": "PERT: (low + 4 × likely + high) ÷ 6",
-                  "value": f"{w['expected']} h",
-                  "detail": f"low {w['low']} · likely {w['likely']} · high {w['high']}"})
-    t.append({"id": "complexity", "group": "Effort", "internal": False,
-              "label": "Complexity multiplier",
-              "formula": "Σ factor scores → band → multiplier (applied once to build workstreams)",
-              "value": f"× {complexity['multiplier']}",
-              "detail": f"score {complexity['total']}/30 → {complexity['band']}"})
-    for l in e["labour_lines"]:
-        t.append({"id": f"labour.{l['role']}", "group": "Cost", "internal": True,
-                  "label": f"{l['role_name']} cost", "formula": "hours × approved hourly rate",
-                  "value": fmt_inr(l["cost"]),
-                  "detail": f"{l['hours']} h × {fmt_inr(l['rate'])}/h · {ref.RATE_CARD_VERSION}"})
-    rows = [
-        ("labour", "Direct labour", "Σ (hours × rate) per role", e["direct_labour"], ""),
-        ("expenses", "Project expenses", "misc + build infrastructure × months", e["expenses"],
-         f"{fmt_inr(e['misc_expenses'])} + {fmt_inr(e['build_infra'])} ({e['build_months']} months)"),
-        ("internal", "Internal project cost", "labour + expenses", e["internal_cost"], ""),
-        ("contingency", "Contingency", "internal cost × contingency %", e["contingency"],
-         f"{float(cpct) * 100:.0f}% because confidence is {confidence['band']} ({confidence['score']}/100)"),
-        ("overhead", "Allocated overhead", "internal cost × overhead %", e["overhead"],
-         f"{float(e['overhead_pct']) * 100:.0f}% · {ref.POLICY_VERSION}"),
-        ("price", "Client price before tax", "(internal + contingency + overhead) ÷ (1 − commission − margin)",
-         e["price_before_tax"],
-         f"{fmt_inr(e['base'])} ÷ (1 − {e['commission_pct']} − {e['margin_pct']})"),
-        ("commission", "Acquisition commission", "price × commission %", e["commission"],
-         f"{float(e['commission_pct']) * 100:.0f}% of price · basis: {inp.policy['commission_basis']}"),
-        ("margin", "Gross margin", "price − base − commission", e["margin"],
-         f"target {float(e['margin_pct']) * 100:.0f}%"),
-        ("gst", "GST (shown separately)", "price × GST %", e["gst"], f"{float(e['gst_pct']) * 100:.0f}%"),
+    t = [
+        {"id": "hours.traditional", "group": "Effort", "internal": False, "label": "Traditional-equivalent effort",
+         "formula": "Σ catalogue hours per workstream (PERT), after platform & complexity adjustments",
+         "value": f"{main['traditional']['expected']} h",
+         "detail": f"low {main['traditional']['low']} · high {main['traditional']['high']}"},
+        {"id": "complexity", "group": "Effort", "internal": False, "label": "Complexity multiplier",
+         "formula": "Σ factor scores → band → multiplier (applied once to build workstreams)",
+         "value": f"× {complexity['multiplier']}", "detail": f"score {complexity['total']}/30 → {complexity['band']}"},
+        {"id": "hours.ai", "group": "Effort", "internal": False, "label": "AI-assisted delivery hours",
+         "formula": "traditional hours × AI productivity factor",
+         "value": f"{e['ai_hours']} h", "detail": f"factor {p['ai_productivity_factor']} · {p['pricing_model']}"},
+        {"id": "hours.billable", "group": "Effort", "internal": False, "label": "Billable hours",
+         "formula": "AI-assisted hours × (1 + contingency %)",
+         "value": f"{e['billable_hours']} h",
+         "detail": f"{float(cpct) * 100:.0f}% contingency because confidence is {confidence['band']} ({confidence['score']}/100)"},
+        {"id": "price.raw", "group": "Price", "internal": False, "label": "Price before band rules",
+         "formula": "billable hours × price per AI-assisted hour",
+         "value": fmt_inr(e["uncapped_price"]), "detail": f"{e['billable_hours']} h × {fmt_inr(p['price_per_ai_hour'])}"},
+        {"id": "price.band", "group": "Price", "internal": False, "label": "Client price (expected)",
+         "formula": f"keep within {fmt_inr(p['min_project_price'])} – {fmt_inr(p['max_project_price'])}, round to {fmt_inr(p['price_rounding'])}",
+         "value": fmt_inr(e["price_before_tax"]),
+         "detail": ("capped at the ₹1,00,000 SMB limit — consider a phased launch" if e["capped"]
+                    else "raised to the ₹5,000 minimum" if e["floored"] else "within the SMB band")},
+        {"id": "client.range", "group": "Price", "internal": False, "label": "Client-facing range",
+         "formula": "low / expected / high hours priced with the same rules",
+         "value": f"{fmt_inr(client_range['low'])} – {fmt_inr(client_range['high'])}",
+         "detail": f"expected {fmt_inr(client_range['expected'])}"},
+        {"id": "cost.delivery", "group": "Internal", "internal": True, "label": "Delivery cost",
+         "formula": "billable hours × internal cost per AI-assisted hour + AI tooling",
+         "value": fmt_inr(e["internal_cost"]),
+         "detail": f"{e['billable_hours']} h × {fmt_inr(e['internal_cost_per_ai_hour'])} + {fmt_inr(e['ai_tooling'])}"},
+        {"id": "cost.commission", "group": "Internal", "internal": True, "label": "Acquisition commission",
+         "formula": "price × commission %", "value": fmt_inr(e["commission"]),
+         "detail": f"{float(e['commission_pct']) * 100:.0f}% · basis: {p['commission_basis']}"},
+        {"id": "cost.margin", "group": "Internal", "internal": True, "label": "Gross margin",
+         "formula": "price − delivery cost − commission", "value": fmt_inr(e["margin"]),
+         "detail": f"{float(e['margin_pct']) * 100:.0f}% of price"},
+        {"id": "cost.gst", "group": "Internal", "internal": True, "label": "GST (shown separately)",
+         "formula": "price × GST %", "value": fmt_inr(e["gst"]), "detail": f"{float(e['gst_pct']) * 100:.0f}%"},
     ]
-    for key, label, formula, value, detail in rows:
-        t.append({"id": f"cost.{key}", "group": "Cost", "internal": True, "label": label,
-                  "formula": formula, "value": fmt_inr(value), "detail": detail})
-    t.append({"id": "client.range", "group": "Client", "internal": False, "label": "Client-facing range",
-              "formula": f"low / expected / high price rounded to nearest {fmt_inr(inp.policy['client_rounding'])}",
-              "value": f"{fmt_inr(client_range['low'])} – {fmt_inr(client_range['high'])}",
-              "detail": f"expected {fmt_inr(client_range['expected'])}"})
     return t

@@ -1,5 +1,5 @@
 import { Card } from "../../components/ui";
-import { dateTime, inrShort } from "../../lib/format";
+import { dateTime, inr } from "../../lib/format";
 import type { Estimate } from "../../lib/types";
 import { TraceList } from "./EstimateTab";
 
@@ -24,7 +24,7 @@ export default function HistoryTab({ est }: { est: Estimate }) {
                   <td className="px-3 py-2 text-ink-3">{dateTime(h.at)}</td>
                   <td className="px-3 py-2">{h.by}</td>
                   <td className="px-3 py-2 text-ink-2">{h.reason}</td>
-                  <td className="num px-3 py-2 text-right font-medium">{inrShort(h.expected)}</td>
+                  <td className="num px-3 py-2 text-right font-medium">{inr(h.expected)}</td>
                   <td className="num px-5 py-2 text-right">{h.confidence}</td>
                 </tr>
               ))}

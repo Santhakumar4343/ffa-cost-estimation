@@ -6,7 +6,7 @@ import { Link } from "react-router-dom";
 import { EstimatesTable } from "./EstimatesList";
 import { Button, Card, EmptyState, Skeleton, Stat } from "../components/ui";
 import { api } from "../lib/api";
-import { inrShort, toNum } from "../lib/format";
+import { inr, toNum } from "../lib/format";
 import { PERSONAS, usePersona } from "../lib/persona";
 
 const STEPS = [
@@ -40,7 +40,7 @@ export default function Dashboard() {
             </div>
             <h1 className="mt-3 text-[26px] font-semibold tracking-tight">Good day, {persona.person.split(" ")[0]}</h1>
             <p className="mt-1 max-w-xl text-[14px] text-navy-100">
-              Turn a client's brief into <span className="rounded bg-gold-400 px-1.5 py-0.5 font-semibold text-navy-950">instant, defensible quotations</span> for web &amp; mobile projects. {persona.blurb}.
+              Turn a client's brief into <span className="rounded bg-gold-400 px-1.5 py-0.5 font-semibold text-navy-950">instant, defensible quotations</span> for web &amp; mobile projects — from ₹5,000 to ₹1,00,000. {persona.blurb}.
             </p>
           </div>
           <Link to="/estimates/new">
@@ -54,7 +54,7 @@ export default function Dashboard() {
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         {isLoading ? [0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-[112px]" />) : (
           <>
-            <Stat featured label="Pipeline (expected)" value={inrShort(pipeline)} sub={list.length ? `Avg. confidence ${avgConf}/100 · excl. GST` : "Excl. GST"} icon={<Wallet className="h-4 w-4" />} />
+            <Stat featured label="Pipeline (expected)" value={inr(pipeline)} sub={list.length ? `Avg. confidence ${avgConf}/100 · excl. GST` : "Excl. GST"} icon={<Wallet className="h-4 w-4" />} />
             <Stat label="Estimates" value={list.length} sub="Every version tracked" icon={<FileStack className="h-4 w-4" />} tone="brand" />
             <Stat label="Awaiting approval" value={awaiting} sub="Technical or commercial" icon={<BadgeCheck className="h-4 w-4" />} tone="violet" />
             <Stat label="Needs clarification" value={clarify} sub="Critical inputs missing" icon={<HelpCircle className="h-4 w-4" />} tone="amber" />

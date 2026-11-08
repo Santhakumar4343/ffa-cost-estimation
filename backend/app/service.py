@@ -66,6 +66,13 @@ def _compute(rec: EstimateRecord) -> None:
         expected_users=intake.get("expected_users"),
     )
     result = eng.estimate(inp, computed_at=utcnow().isoformat())
+    # A static website only needs to know what the business is and which pages it wants;
+    # scale, integrations, deadlines etc. become optional questions rather than blockers.
+    static_only = set(scope["feature_codes"]) <= {"STATIC_SITE"} and not scope.get("custom_modules")
+    critical_keys = ({"business_context", "platform", "features"} if static_only
+                     else {g["key"] for g in ref.INPUT_GROUPS if g["critical"]})
+    for q in ev["questions"]:
+        q["critical"] = q["critical"] and q["group"] in critical_keys
     result["input_groups"] = ev["input_groups"]
     result["questions"] = ev["questions"]
     result["complexity"]["overridden"] = list(overrides.keys())
@@ -82,37 +89,41 @@ def _compute(rec: EstimateRecord) -> None:
     rec.intake = intake
     rec.result = jsonable(result)
     # Proceed-with-assumptions is allowed; only block when evidence is genuinely thin.
-    critical_missing = [g for g in ref.INPUT_GROUPS
-                        if g["critical"] and result["input_groups"][g["key"]]["status"] == "MISSING"]
+    critical_missing = [k for k in critical_keys if result["input_groups"][k]["status"] == "MISSING"]
     thin = result["confidence"]["band"] == "Low" or len(critical_missing) >= 2
     rec.status = "NEEDS_CLARIFICATION" if thin else "ESTIMATED"
 
 
-def _weeks_until(target: str | None) -> float | None:
+def _working_days_until(target: str | None) -> float | None:
     if not target:
         return None
     try:
         d = date.fromisoformat(target)
     except ValueError:
         return None
-    return (d - datetime.now(timezone.utc).date()).days / 7
+    return (d - datetime.now(timezone.utc).date()).days * 5 / 7
 
 
 def _commercial_flags(intake: dict, result: dict) -> list[dict]:
     flags = []
-    weeks = result["timeline"]["weeks"]["expected"]
-    available = _weeks_until(intake.get("target_launch"))
+    days = result["timeline"]["days"]["expected"]
+    available = _working_days_until(intake.get("target_launch"))
     source = "requested launch date"
     if available is None:
         m = ai.TIME_RE.search(intake["brief"])
         if m:
             n = int(m.group(1))
-            available = n * (4.33 if m.group(2).lower().startswith("month") else 1)
+            available = n * (22 if m.group(2).lower().startswith("month") else 5)
             source = f"“{m.group(0)}” in the brief"
-    if available is not None and weeks > available:
+    if available is not None and days > available:
         flags.append({"kind": "timeline", "severity": "critical",
-                      "description": f"Delivery needs about {weeks} weeks (expected), but the {source} allows "
-                                     f"about {math.floor(available)} weeks. Consider a phased launch with the Basic package."})
+                      "description": f"Delivery needs about {days} working days (expected), but the {source} allows "
+                                     f"about {math.floor(available)}. Consider launching the Basic package first."})
+    if result["band"]["capped"]:
+        flags.append({"kind": "cap", "severity": "warning",
+                      "description": f"The full scope prices above the ₹1,00,000 SMB limit "
+                                     f"({eng.fmt_inr(Decimal(str(result['band']['uncapped'])))} before the cap). "
+                                     f"The quote is held at ₹1,00,000 — consider a phased launch or trimming scope."})
     budget = intake.get("budget_max")
     low = Decimal(str(result["client_range"]["low"]))
     if budget and Decimal(str(budget)) < low:
@@ -129,9 +140,9 @@ def _assumptions(intake: dict, analysis: dict, result: dict, scope: dict) -> lis
             out.append({"text": f"{it['statement']} is included ({it['inference_reason']})", "source": "inferred"})
     g = result["input_groups"]
     if g["scale"]["status"] != "PROVIDED":
-        out.append({"text": "Scale assumed medium (5,000–50,000 users) for infrastructure sizing", "source": "default"})
+        out.append({"text": "Scale assumed small (under 5,000 users) for hosting", "source": "default"})
     if g["operations"]["status"] != "PROVIDED":
-        out.append({"text": "Hosted on a managed cloud (AWS Mumbai region) set up by FFA in the client's account",
+        out.append({"text": "Hosted on affordable cloud / shared hosting set up by FFA in the client's account",
                     "source": "default"})
     if g["data_migration"]["status"] != "PROVIDED":
         out.append({"text": "No data migration from existing systems", "source": "default"})
@@ -222,6 +233,29 @@ def update_scope(db: Session, rec: EstimateRecord, role: str, body: dict) -> Est
     return _revise(db, rec, role, body.get("reason") or "Scope updated")
 
 
+def upgrade_legacy_estimates() -> int:
+    """Re-price estimates created under an older pricing model as a NEW version (audited; approvals reset).
+
+    Run once at start-up, before the web workers start (see docker-entrypoint.sh) — never per request.
+    """
+    from sqlalchemy import select
+
+    from .db import SessionLocal
+
+    n = 0
+    with SessionLocal() as db:
+        for rec in db.scalars(select(EstimateRecord)).all():
+            if (rec.result or {}).get("versions", {}).get("rules") == ref.RULES_VERSION:
+                continue
+            # Re-run extraction rules too, so e.g. static-site detection applies to old briefs.
+            rec.analysis = ai.analyze(dict(rec.intake))
+            rec.scope = {**rec.scope, "feature_codes": rec.analysis["feature_codes"],
+                         "addon_codes": rec.analysis["addon_codes"]}
+            _revise(db, rec, "system", f"Re-priced with the {ref.POLICY['pricing_model']} model ({ref.RULES_VERSION})")
+            n += 1
+    return n
+
+
 def answer_questions(db: Session, rec: EstimateRecord, role: str, answers: dict) -> EstimateRecord:
     clean = {k: v.strip()[:1000] for k, v in answers.items() if isinstance(v, str) and v.strip()}
     rec.answers = {**(rec.answers or {}), **clean}
@@ -257,7 +291,7 @@ def view(rec: EstimateRecord, role: str) -> dict:
     r = dict(rec.result)
     if not internal:
         r.pop("cost", None)
-        r.pop("benchmark", None)
+        r["band"] = {k: v for k, v in r.get("band", {}).items() if k != "uncapped"}
         r["trace"] = [t for t in r.get("trace", []) if not t["internal"]]
         r["confidence"] = {k: v for k, v in r["confidence"].items() if k != "contingency_pct"}
     analysis = dict(rec.analysis)
@@ -282,7 +316,7 @@ def summary(rec: EstimateRecord) -> dict:
             "category": rec.category, "category_name": ref.CATEGORY_NAMES[rec.category], "status": rec.status,
             "version": rec.version, "updated_at": rec.updated_at.isoformat(),
             "client_range": r["client_range"], "confidence": r["confidence"]["score"],
-            "confidence_band": r["confidence"]["band"], "weeks": r["timeline"]["weeks"]["expected"],
+            "confidence_band": r["confidence"]["band"], "days": r["timeline"]["days"]["expected"],
             "ai_mode": rec.analysis.get("mode")}
 
 

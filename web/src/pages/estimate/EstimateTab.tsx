@@ -2,13 +2,8 @@ import clsx from "clsx";
 import { Calculator, Clock, Gauge, Info, Layers, Scale } from "lucide-react";
 import { useState } from "react";
 import { Alert, Badge, Button, Card, Drawer, Locked, Stat } from "../../components/ui";
-import { hrs, inr, inrShort, num, pct, toNum } from "../../lib/format";
+import { hrs1, inr, num, pct, toNum } from "../../lib/format";
 import type { Estimate, TraceEntry, Workstream } from "../../lib/types";
-
-const ROLE_NAMES: Record<string, string> = {
-  BA: "Business Analyst", UX: "UI/UX Designer", FE: "Frontend Dev", BE: "Backend Dev", MOB: "Mobile Dev",
-  QA: "QA Engineer", DEVOPS: "DevOps", TL: "Team Lead / PM",
-};
 
 /** Single-series horizontal bars: expected hours with a low–high range whisker. One hue, no legend. */
 function EffortBars({ rows }: { rows: Workstream[] }) {
@@ -34,14 +29,14 @@ function EffortBars({ rows }: { rows: Workstream[] }) {
               <div className="absolute top-[5px] h-2.5 w-px bg-brand-900/50" style={{ left: `${(lo / max) * 100}%` }} />
               <div className="absolute top-[5px] h-2.5 w-px bg-brand-900/50" style={{ left: `${(hi / max) * 100}%` }} />
             </div>
-            <span className="num text-right text-[12.5px] font-medium">{num(exp)} h</span>
+            <span className="num text-right text-[12.5px] font-medium">{hrs1(exp)}</span>
             {on && (
               <div className="pointer-events-none absolute left-[160px] top-full z-10 mt-1 w-64 rounded-lg border border-line bg-surface p-3 text-[12px] shadow-pop">
                 <div className="font-semibold text-ink">{r.label}</div>
-                <div className="text-ink-3">{ROLE_NAMES[r.role]} · {((exp / total) * 100).toFixed(0)}% of effort</div>
+                <div className="text-ink-3">{((exp / total) * 100).toFixed(0)}% of effort · ≈ {num(r.traditional)} h traditional</div>
                 <div className="num mt-2 grid grid-cols-4 gap-1 text-center">
                   {([["Low", r.low], ["Likely", r.likely], ["High", r.high], ["Expected", r.expected]] as const).map(([k, v]) => (
-                    <div key={k}><div className="text-[10.5px] text-ink-3">{k}</div><div className="font-medium">{num(v)}</div></div>
+                    <div key={k}><div className="text-[10.5px] text-ink-3">{k}</div><div className="font-medium">{toNum(v).toFixed(1)}</div></div>
                   ))}
                 </div>
               </div>
@@ -56,33 +51,83 @@ function EffortBars({ rows }: { rows: Workstream[] }) {
   );
 }
 
-function CostWaterfall({ est }: { est: Estimate }) {
-  const c = est.result.cost!.expected;
-  const rows: { label: string; value: string; note?: string; strong?: boolean; sub?: boolean }[] = [
-    { label: "Direct labour", value: c.direct_labour, note: "Σ hours × approved role rate" },
-    { label: "Project expenses", value: c.expenses, note: `Misc ${inr(c.misc_expenses)} + build infra ${inr(c.build_infra)} (${c.build_months} mo)` },
-    { label: "Internal project cost", value: c.internal_cost, strong: true },
-    { label: `Contingency (${pct(c.contingency_pct)})`, value: c.contingency, note: `Confidence ${est.result.confidence.band}`, sub: true },
-    { label: `Allocated overhead (${pct(c.overhead_pct)})`, value: c.overhead, sub: true },
-    { label: `Acquisition commission (${pct(c.commission_pct)} of price)`, value: c.commission, sub: true },
-    { label: `Gross margin (target ${pct(c.margin_pct)})`, value: c.margin, sub: true },
-    { label: "Client price before tax", value: c.price_before_tax, strong: true, note: "(cost + contingency + overhead) ÷ (1 − c − m)" },
-    { label: `GST (${pct(c.gst_pct)}) — shown separately`, value: c.gst, sub: true },
-    { label: "Total incl. GST", value: c.price_with_tax, strong: true },
-  ];
+type Row = { label: string; value: string; note?: string; strong?: boolean; sub?: boolean; hero?: boolean };
+
+function RowsTable({ rows }: { rows: Row[] }) {
   return (
     <table className="w-full text-[13px]">
       <tbody>
         {rows.map((r) => (
-          <tr key={r.label} className={clsx("border-b border-line-soft last:border-0", r.strong && "bg-brand-50/60", r.label === "Client price before tax" && "!bg-navy-900 text-white [&_div]:!text-navy-200 [&_td]:!text-white")}>
-            <td className={clsx("py-2 pl-3 pr-3", r.sub && "pl-6 text-ink-2", r.strong && "font-semibold")}>
+          <tr key={r.label} className={clsx("border-b border-line-soft last:border-0", r.strong && "bg-brand-50/60",
+            r.hero && "!bg-navy-900 text-white [&_div]:!text-navy-200 [&_td]:!text-white")}>
+            <td className={clsx("py-2 pl-3 pr-3", r.sub && "pl-6 text-ink-2", (r.strong || r.hero) && "font-semibold")}>
               {r.label}{r.note && <div className="text-[11.5px] font-normal text-ink-3">{r.note}</div>}
             </td>
-            <td className={clsx("num py-2 pr-3 text-right", r.strong ? "font-semibold" : "text-ink-2")}>{inr(r.value)}</td>
+            <td className={clsx("num whitespace-nowrap py-2 pr-3 text-right", r.strong || r.hero ? "font-semibold" : "text-ink-2")}>{r.value}</td>
           </tr>
         ))}
       </tbody>
     </table>
+  );
+}
+
+/** Client-safe: how the quoted price is derived (visible to every role). */
+function PriceBuildUp({ est }: { est: Estimate }) {
+  const r = est.result;
+  const b = r.band;
+  const ai = r.effort.totals.expected, bill = r.effort.billable.expected;
+  const raw = toNum(bill) * toNum(b.price_per_ai_hour);
+  const rule = b.capped ? "Held at the ₹1,00,000 SMB limit" : b.floored ? "Raised to the ₹5,000 minimum"
+    : `Rounded to the nearest ${inr(b.rounding)}`;
+  const gst = Math.round(toNum(r.client_range.expected) * 0.18);
+  const rows: Row[] = [
+    { label: "AI-assisted delivery hours", value: hrs1(ai), note: `≈ ${num(r.effort.traditional.expected)} h of traditional effort` },
+    { label: "Billable hours (incl. contingency)", value: hrs1(bill), note: `Contingency for ${r.confidence.band.toLowerCase()} confidence`, sub: true },
+    { label: `× ${inr(b.price_per_ai_hour)} per AI-assisted hour`, value: inr(Math.round(raw)), sub: true },
+    { label: "Client price (expected)", value: inr(r.client_range.expected), note: rule, hero: true },
+    { label: "GST 18% — shown separately", value: inr(gst), sub: true },
+    { label: "Total incl. GST", value: inr(toNum(r.client_range.expected) + gst), strong: true },
+  ];
+  return <RowsTable rows={rows} />;
+}
+
+/** Finance only: delivery cost, commission and margin. */
+function InternalEconomics({ est }: { est: Estimate }) {
+  const c = est.result.cost!.expected;
+  const rows: Row[] = [
+    { label: "Client price before tax", value: inr(c.price_before_tax), strong: true },
+    { label: "Delivery cost", value: inr(c.delivery_cost), note: `${hrs1(c.billable_hours)} × ${inr(c.internal_cost_per_ai_hour)} per hour`, sub: true },
+    { label: "AI tooling & preview hosting", value: inr(c.ai_tooling), sub: true },
+    { label: `Acquisition commission (${pct(c.commission_pct)} of price)`, value: inr(c.commission), sub: true },
+    { label: `Gross margin (${pct(c.margin_pct)})`, value: inr(c.margin), hero: true, note: "price − delivery cost − tooling − commission" },
+  ];
+  return <RowsTable rows={rows} />;
+}
+
+/** Where this quote sits in the ₹5,000 – ₹1,00,000 SMB band. */
+function BandMeter({ est }: { est: Estimate }) {
+  const b = est.result.band;
+  const cr = est.result.client_range;
+  const min = toNum(b.min), max = toNum(b.max);
+  const pos = (v: string) => `${Math.min(100, Math.max(0, ((toNum(v) - min) / (max - min)) * 100))}%`;
+  return (
+    <div>
+      <div className="relative mt-2 h-3 rounded-full bg-gradient-to-r from-emerald-100 via-gold-100 to-accent-100">
+        <div className="absolute inset-y-0 rounded-full bg-brand-500/25 ring-1 ring-inset ring-brand-500/40"
+          style={{ left: pos(cr.low), right: `calc(100% - ${pos(cr.high)})` }} />
+        <div className="absolute -top-1.5 h-6 w-1.5 -translate-x-1/2 rounded-full bg-navy-800 ring-2 ring-surface" style={{ left: pos(cr.expected) }} />
+      </div>
+      <div className="num mt-2 flex justify-between text-[11.5px] text-ink-3">
+        <span>{inr(b.min)}</span><span>{inr(Math.round((min + max) / 2))}</span><span>{inr(b.max)}</span>
+      </div>
+      <div className="mt-3 flex flex-wrap items-center gap-2 text-[12.5px]">
+        <span className="font-semibold">Quote: {inr(cr.low)} – {inr(cr.high)}</span>
+        {b.capped ? <Badge tone="amber">Held at ₹1,00,000 limit</Badge>
+          : b.floored ? <Badge tone="brand">Minimum ₹5,000 applies</Badge>
+          : <Badge tone="green">Within SMB band</Badge>}
+      </div>
+      <p className="mt-2 text-[11.5px] text-ink-3">{b.note}. Every client price is a whole rupee amount, rounded to {inr(b.rounding)}.</p>
+    </div>
   );
 }
 
@@ -121,14 +166,14 @@ export default function EstimateTab({ est }: { est: Estimate }) {
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <Stat tone="brand" label="Total effort" value={hrs(r.effort.totals.expected)} sub={`Range ${num(r.effort.totals.low)}–${num(r.effort.totals.high)} h`} icon={<Clock className="h-4 w-4" />} />
-        <Stat tone="teal" label="Duration" value={`${r.timeline.weeks.expected} weeks`} sub={`${r.timeline.weeks.low}–${r.timeline.weeks.high} weeks · ${r.timeline.team.devs} developers`} icon={<Layers className="h-4 w-4" />} />
+        <Stat tone="brand" label="Delivery effort" value={hrs1(r.effort.billable.expected)} sub={`AI-assisted · ≈ ${num(r.effort.traditional.expected)} h traditional`} icon={<Clock className="h-4 w-4" />} />
+        <Stat tone="teal" label="Delivery time" value={`${r.timeline.days.expected} working days`} sub={`${r.timeline.days.low}–${r.timeline.days.high} days incl. client review`} icon={<Layers className="h-4 w-4" />} />
         <Stat tone="violet" label="Complexity" value={r.complexity.band} sub={`Score ${r.complexity.total}/${r.complexity.max} · ×${r.complexity.multiplier} effort`} icon={<Gauge className="h-4 w-4" />} />
-        <Stat tone="amber" label="Client range" value={`${inrShort(r.client_range.low)} – ${inrShort(r.client_range.high)}`} sub={`Expected ${inrShort(r.client_range.expected)} · excl. GST`} icon={<Scale className="h-4 w-4" />} />
+        <Stat tone="amber" label="Client price" value={inr(r.client_range.expected)} sub={`Range ${inr(r.client_range.low)} – ${inr(r.client_range.high)} · excl. GST`} icon={<Scale className="h-4 w-4" />} />
       </div>
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
-        <Card title="Effort by workstream" subtitle="Expected hours after platform and complexity adjustments"
+        <Card title="AI-assisted hours by workstream" subtitle={`Traditional-equivalent effort × AI productivity factor (${r.effort.ai_factor})`}
           actions={<Button variant="secondary" size="sm" icon={<Calculator className="h-4 w-4" />} onClick={() => setTrace(true)}>Why this number?</Button>}>
           <EffortBars rows={r.effort.workstreams} />
           {r.complexity.reasons.length > 0 && (
@@ -138,61 +183,23 @@ export default function EstimateTab({ est }: { est: Estimate }) {
           )}
         </Card>
 
-        <Card title="Internal costing" subtitle={internal ? `Expected scenario · ${r.versions.rate_card} · ${r.versions.policy}` : undefined}>
-          {internal && exp ? <CostWaterfall est={est} /> : (
-            <Locked title="Visible to Finance only">
-              Internal rates, overhead, commission and margin are confidential. You see the client-facing range. Switch persona to Finance to view.
-            </Locked>
-          )}
-        </Card>
+        <div className="space-y-5">
+          <Card title="How the price is built" subtitle={r.pricing_model}>
+            <PriceBuildUp est={est} />
+          </Card>
+          <Card title="SMB price band" subtitle="Small businesses & startups · AP / Telangana">
+            <BandMeter est={est} />
+          </Card>
+        </div>
       </div>
 
-      {internal && exp && (
-        <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
-          <Card title="Labour by role" subtitle="Every labour rupee traces to hours × approved rate" bodyClass="p-0">
-            <table className="w-full text-[13px]">
-              <thead>
-                <tr className="border-b border-line bg-slate-50/60 text-[11.5px] uppercase tracking-wider text-ink-3">
-                  <th className="px-5 py-2 text-left font-semibold">Role</th>
-                  <th className="px-3 py-2 text-right font-semibold">Hours</th>
-                  <th className="px-3 py-2 text-right font-semibold">Rate / h</th>
-                  <th className="px-5 py-2 text-right font-semibold">Cost</th>
-                </tr>
-              </thead>
-              <tbody>
-                {exp.labour_lines.map((l) => (
-                  <tr key={l.role} className="border-b border-line last:border-0">
-                    <td className="px-5 py-2">{l.role_name}</td>
-                    <td className="num px-3 py-2 text-right">{num(l.hours)}</td>
-                    <td className="num px-3 py-2 text-right text-ink-2">{inr(l.rate)}</td>
-                    <td className="num px-5 py-2 text-right font-medium">{inr(l.cost)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </Card>
-          {r.benchmark && (
-            <Card title="Market benchmark check" subtitle="Benchmarks inform pricing; they never set it">
-              <div className="num text-[22px] font-semibold">{inr(r.benchmark.implied_hourly)}<span className="text-[13px] font-normal text-ink-3"> / hour implied</span></div>
-              <div className="mt-3 h-2 rounded-full bg-slate-100">
-                <div className="relative h-2">
-                  {(() => {
-                    const lo = toNum(r.benchmark!.band_low), hi = toNum(r.benchmark!.band_high), v = toNum(r.benchmark!.implied_hourly);
-                    const scale = hi * 1.2;
-                    return <>
-                      <div className="absolute h-2 rounded-full bg-brand-100" style={{ left: `${(lo / scale) * 100}%`, width: `${((hi - lo) / scale) * 100}%` }} />
-                      <div className="absolute -top-1 h-4 w-1 rounded bg-brand-700" style={{ left: `${Math.min(v / scale, 1) * 100}%` }} />
-                    </>;
-                  })()}
-                </div>
-              </div>
-              <div className="mt-2 flex justify-between text-[11.5px] text-ink-3"><span>Band {inr(r.benchmark.band_low)}–{inr(r.benchmark.band_high)}</span>
-                <Badge tone={r.benchmark.status === "within" ? "green" : "amber"}>{r.benchmark.status} band</Badge></div>
-              <p className="mt-2 text-[11.5px] text-ink-3">{r.benchmark.source}</p>
-            </Card>
-          )}
-        </div>
-      )}
+      <Card title="Internal economics" subtitle={internal ? `Expected scenario · ${r.versions.policy}` : undefined}>
+        {internal && exp ? <InternalEconomics est={est} /> : (
+          <Locked title="Visible to Finance only">
+            Delivery cost, commission and margin are confidential. You see the client price and how it is built. Switch persona to Finance to view.
+          </Locked>
+        )}
+      </Card>
 
       <div className="grid gap-5 lg:grid-cols-2">
         <Card title="Recurring & running costs" subtitle="Always separate from the one-time development price">
@@ -208,7 +215,7 @@ export default function EstimateTab({ est }: { est: Estimate }) {
               <div className="text-[13px] font-medium">Annual maintenance & support</div>
               <div className="text-[11.5px] text-ink-3">{pct(rec.maintenance.pct)} of development per year · {rec.maintenance.note}</div>
             </div>
-            <div className="num whitespace-nowrap text-[14px] font-semibold">{inrShort(rec.maintenance.annual_low)}–{inrShort(rec.maintenance.annual_high)}<span className="text-[11.5px] font-normal text-ink-3">/yr</span></div>
+            <div className="num whitespace-nowrap text-[14px] font-semibold">{inr(rec.maintenance.annual_low)}–{inr(rec.maintenance.annual_high)}<span className="text-[11.5px] font-normal text-ink-3">/yr</span></div>
           </div>
           <ul className="mt-3 space-y-1.5 text-[12.5px] text-ink-2">
             {[...rec.third_party, ...rec.fixed].map((t) => (

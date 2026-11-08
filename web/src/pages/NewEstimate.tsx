@@ -172,7 +172,7 @@ export default function NewEstimate() {
               <Field label="Expected users" hint="Registered users in year one">
                 <input className="input num" type="number" min={1} value={form.expected_users} onChange={(e) => set("expected_users", e.target.value)} placeholder="Optional" />
               </Field>
-              <Field label="Client budget (₹)" hint="Upper limit, if shared">
+              <Field label="Client budget (₹)" hint="Typical: ₹5,000 – ₹1,00,000">
                 <input className="input num" type="number" min={1000} value={form.budget_max} onChange={(e) => set("budget_max", e.target.value)} placeholder="Optional" />
               </Field>
               <Field label="Target launch date">

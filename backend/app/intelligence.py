@@ -106,6 +106,19 @@ def _kw_regex(kw: str) -> re.Pattern:
     return re.compile(r"(?<![\w-])" + re.escape(kw) + r"(?:s|es|ing|ed)?(?![\w-])", re.I)
 
 
+NEGATION_RE = re.compile(r"\b(no|not|without|don'?t|doesn'?t|never|nor)\b[^.,;]{0,25}$", re.I)
+STATIC_RE = re.compile(r"\b(static|landing page|one[- ]page|single[- ]page|brochure|simple website|basic website|"
+                       r"informational website|company website|portfolio website|business website)\b", re.I)
+
+
+def _mentions(text: str, kw: str) -> bool:
+    """Keyword present and not negated just before it (e.g. 'no login needed')."""
+    for m in _kw_regex(kw).finditer(text):
+        if not NEGATION_RE.search(text[max(0, m.start() - 30):m.start()]):
+            return True
+    return False
+
+
 # ---------------------------------------------------------------- rule-based extractor (offline mode)
 ACTOR_WORDS = {
     "customer": "Customers", "client": "Clients", "student": "Students", "learner": "Learners",
@@ -146,7 +159,7 @@ def _rule_extract(brief: str, category: str) -> dict:
         for f in idx:
             if f["code"] in seen_features:
                 continue
-            if any(_kw_regex(k).search(s["text"]) for k in f["keywords"]):
+            if any(_mentions(s["text"], k) for k in f["keywords"]):
                 seen_features.add(f["code"])
                 add("FEATURE", f["name"], s, code=f["code"])
     seen_actors: set[str] = set()
@@ -409,8 +422,20 @@ def analyze(intake: dict) -> dict:
         })
 
     # Category defaults the brief didn't mention become INFERRED assumptions (BR-2).
+    # A static / landing-page brief stays a static site: no login, admin or other app modules are inferred.
     present = {i["feature_code"] for i in items if i["feature_code"]}
-    for code in ref.CATEGORY_DEFAULTS.get(category, []):
+    static_site = bool(STATIC_RE.search(brief)) or "STATIC_SITE" in present
+    defaults = ["STATIC_SITE"] if static_site else ref.CATEGORY_DEFAULTS.get(category, [])
+    if static_site:
+        # On a static site, an "about us" page or an embedded Google Map is part of the website itself —
+        # keep the requirement visible, but don't price it as a CMS or a maps integration.
+        included = {"CMS": "page", "MAPS": "embedded map"}
+        for it in items:
+            if it["feature_code"] in included:
+                it["statement"] = f"{it['statement']} — included in the static website ({included[it['feature_code']]})"
+                it["feature_code"] = None
+        present = {i["feature_code"] for i in items if i["feature_code"]}
+    for code in defaults:
         if code not in present:
             f = idx[code]
             items.append({
@@ -422,8 +447,8 @@ def analyze(intake: dict) -> dict:
             present.add(code)
 
     feature_codes = [c for c in dict.fromkeys(i["feature_code"] for i in items if i["feature_code"])]
-    addons = [f["code"] for f in ref.catalogue_for(category)
-              if f["tier"] == "advanced" and f["code"] not in feature_codes][:3]
+    addons = [] if static_site else [f["code"] for f in ref.catalogue_for(category)
+                                     if f["tier"] == "advanced" and f["code"] not in feature_codes][:3]
     explicit = [i for i in items if i["basis"] == "EXPLICIT"]
     verified = [i for i in explicit if i["verification"] in ("VERIFIED", "FUZZY")]
     conflicts = [{"kind": "brief", "severity": "warning", "description": c["description"], "quotes": c["quotes"]}

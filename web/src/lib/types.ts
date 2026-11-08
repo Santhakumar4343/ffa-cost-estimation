@@ -33,17 +33,17 @@ export interface ExtractedItem {
 export interface Question { id: string; group: string; group_name: string; critical: boolean; text: string; answer: string | null }
 export interface Flag { id?: string; kind: string; severity: "warning" | "critical"; description: string; quotes?: string[] }
 export interface TraceEntry { id: string; group: string; internal: boolean; label: string; formula: string; value: string; detail: string }
-export interface Workstream { workstream: string; label: string; role: string; low: string; likely: string; high: string; expected: string }
+export interface Workstream { workstream: string; label: string; role: string; traditional: string; low: string; likely: string; high: string; expected: string }
 export interface Tier {
   key: string; name: string; description: string; recommended: boolean;
   features: { code: string; name: string; tier: string; addon: boolean }[];
-  hours_expected: string; weeks: number; price: Range;
+  hours_expected: string; days: number; capped: boolean; price: Range;
 }
 export interface CostScenario {
-  labour_lines: { role: string; role_name: string; hours: string; rate: string; cost: string }[];
-  direct_labour: Money; misc_expenses: Money; build_infra: Money; build_months: number; expenses: Money;
-  internal_cost: Money; contingency_pct: string; contingency: Money; overhead_pct: string; overhead: Money;
-  base: Money; commission_pct: string; commission: Money; margin_pct: string; margin: Money;
+  ai_hours: string; contingency_pct: string; contingency_hours: string; billable_hours: string;
+  price_per_ai_hour: Money; uncapped_price: Money; capped: boolean; floored: boolean;
+  delivery_cost: Money; internal_cost_per_ai_hour: Money; ai_tooling: Money; internal_cost: Money;
+  commission_pct: string; commission: Money; margin: Money; margin_pct: string;
   price_before_tax: Money; gst_pct: string; gst: Money; price_with_tax: Money;
 }
 
@@ -58,13 +58,17 @@ export interface EstimateResult {
     score: number; band: "High" | "Medium" | "Low"; contingency_pct?: string;
     components: { key: string; label: string; weight: number; value: number; detail: string }[];
   };
+  pricing_model: string;
   effort: {
+    unit: "ai_hours"; ai_factor: string;
     workstreams: Workstream[];
-    lines: { source: string; code: string; name: string; module: string; workstream: string; low: string; likely: string; high: string }[];
-    totals: Range;
+    totals: Range;        // AI-assisted hours
+    billable: Range;      // AI-assisted hours + contingency
+    traditional: Range;   // traditional-equivalent hours
   };
   cost?: { low: CostScenario; expected: CostScenario; high: CostScenario };
   client_range: Range;
+  band: { min: Money; max: Money; price: Money; price_per_ai_hour: Money; rounding: Money; uncapped?: Money; capped: boolean; floored: boolean; position: number; note: string };
   tiers: Tier[];
   recurring: {
     cloud: { size: string; label: string; assumed: boolean; monthly_low: Money; monthly_high: Money; note: string };
@@ -73,13 +77,13 @@ export interface EstimateResult {
     maintenance: { pct: string; annual_low: Money; annual_high: Money; note: string };
   };
   timeline: {
-    weeks: { low: number; expected: number; high: number };
-    team: { devs: number; hours_per_week: number };
+    unit: "days";
+    days: { low: number; expected: number; high: number };
+    team: { ai_hours_per_day: string };
     phases: { name: string; start: number; end: number }[];
-    milestones: { name: string; week: number; payment_pct: string }[];
+    milestones: { name: string; day: number; payment_pct: string }[];
     client_dependencies: string[];
   };
-  benchmark?: { implied_hourly: Money; band_low: Money; band_high: Money; status: string; source: string };
   trace: TraceEntry[];
   input_groups: Record<string, { status: "PROVIDED" | "PARTIAL" | "MISSING"; note: string }>;
   questions: Question[];
@@ -120,7 +124,7 @@ export interface Estimate {
 export interface EstimateSummary {
   id: number; ref: string; title: string; client_name: string; category: string; category_name: string;
   status: string; version: number; updated_at: string; client_range: Range; confidence: number;
-  confidence_band: "High" | "Medium" | "Low"; weeks: number; ai_mode: string;
+  confidence_band: "High" | "Medium" | "Low"; days: number; ai_mode: string;
 }
 
 export interface CatalogueFeature {

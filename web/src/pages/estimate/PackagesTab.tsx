@@ -1,7 +1,7 @@
 import clsx from "clsx";
 import { Check, Plus, Star } from "lucide-react";
 import { Alert, Badge } from "../../components/ui";
-import { inrShort, num } from "../../lib/format";
+import { inr, toNum } from "../../lib/format";
 import type { Estimate } from "../../lib/types";
 
 export default function PackagesTab({ est }: { est: Estimate }) {
@@ -9,7 +9,7 @@ export default function PackagesTab({ est }: { est: Estimate }) {
   const base = new Set(tiers[0]?.features.map((f) => f.code));
   return (
     <div className="space-y-5">
-      <Alert tone="info" title="Packages differ by scope, not by price multipliers">
+      <Alert tone="info" title="Packages differ by scope, all within ₹5,000 – ₹1,00,000">
         Each package is a separate run of the estimation engine on a different feature set, so every price difference is explained by features.
       </Alert>
       <div className={clsx("grid gap-5", tiers.length === 3 ? "lg:grid-cols-3" : "lg:grid-cols-2")}>
@@ -24,12 +24,13 @@ export default function PackagesTab({ est }: { est: Estimate }) {
               <h3 className="text-[17px] font-semibold">{t.name}</h3>
               <p className="sub mt-0.5 text-[12.5px] text-ink-3">{t.description}</p>
               <div className="num mt-4 text-[24px] font-semibold tracking-tight">
-                {inrShort(t.price.low)} – {inrShort(t.price.high)}
+                {inr(t.price.low)} – {inr(t.price.high)}
               </div>
-              <div className="sub mt-0.5 text-[12.5px] text-ink-3">Expected {inrShort(t.price.expected)} · excl. GST</div>
+              <div className="sub mt-0.5 text-[12.5px] text-ink-3">Expected {inr(t.price.expected)} · excl. GST</div>
+              {t.capped && <div className="mt-2"><Badge tone="amber">Held at ₹1,00,000 SMB limit</Badge></div>}
               <div className="mt-4 grid grid-cols-2 gap-3 text-[12.5px]">
-                <div className={clsx("rounded-lg px-3 py-2", t.recommended ? "bg-white/10 ring-1 ring-inset ring-white/10" : "bg-slate-50")}><div className="sub text-ink-3">Duration</div><div className="num font-semibold">{t.weeks} weeks</div></div>
-                <div className={clsx("rounded-lg px-3 py-2", t.recommended ? "bg-white/10 ring-1 ring-inset ring-white/10" : "bg-slate-50")}><div className="sub text-ink-3">Effort</div><div className="num font-semibold">{num(t.hours_expected)} h</div></div>
+                <div className={clsx("rounded-lg px-3 py-2", t.recommended ? "bg-white/10 ring-1 ring-inset ring-white/10" : "bg-slate-50")}><div className="sub text-ink-3">Duration</div><div className="num font-semibold">{t.days} working days</div></div>
+                <div className={clsx("rounded-lg px-3 py-2", t.recommended ? "bg-white/10 ring-1 ring-inset ring-white/10" : "bg-slate-50")}><div className="sub text-ink-3">AI-assisted effort</div><div className="num font-semibold">{toNum(t.hours_expected).toFixed(1)} h</div></div>
               </div>
             </div>
             <ul className="flex-1 space-y-2 px-6 py-5 text-[13px]">
